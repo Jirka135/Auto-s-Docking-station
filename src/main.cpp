@@ -20,6 +20,25 @@ Bala bala;
 
 using namespace std;
 TFT_eSprite display = TFT_eSprite(&M5.Lcd);
+
+int8_t getBatteryLevel()
+{
+  Wire.beginTransmission(0x75);
+  Wire.write(0x78);
+  if (Wire.endTransmission(false) == 0
+  && Wire.requestFrom(0x75, 1)) {
+    switch (Wire.read() & 0xF0) {
+    case 0xE0: return 25;
+    case 0xC0: return 50;
+    case 0x80: return 75;
+    case 0x00: return 100;
+    default: return 0;
+    }
+  }
+  return -1;
+}
+
+
 // Funkce příchod dat
 void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len)
 {
@@ -72,8 +91,12 @@ void vypis(const char *text,int posx,int posy){
 
 void setup()
 {
+  Serial.println("START " __FILE__ " from " __DATE__ "\r\nUsing library version " VERSION_IRREMOTE);
   // Init Serial Monitor
+  IrReceiver.begin(IR_RECEIVE_PIN, ENABLE_LED_FEEDBACK);
   Serial.begin(115200);
+  Serial.print("Ready to receive IR signals of protocols: ");
+  printActiveIRProtocols(&Serial);
   vypis("Start",10,10);
   M5.begin();
   Wire.begin();
@@ -118,18 +141,18 @@ void loop()
 
   display.fillSprite(TFT_BLACK);
   vypis("Povidame si",10,10);
-  float batteryLevel = M5.Power.getBatteryLevel();
-  Serial.print("Battery level: ");
-  char myText[16];
-  sprintf(myText, "%.2f", batteryLevel);
-  vypis(myText,10,40);
-  Serial.println(batteryLevel);
-  /*const char* outgoingData = "1";
+  int bat = getBatteryLevel();
+  char baterka[10];
+  sprintf(baterka, "%d", bat);
+  vypis(baterka,10,40);
+
+  Serial.println(bat);
+  const char* outgoingData = baterka;
   esp_err_t result = esp_now_send(broadcastAddress, (uint8_t*) outgoingData, strlen(outgoingData) + 1);
   if (result == ESP_OK) {
     //Serial.println("odesláno");
   }
-  */
+  
   // Wait for 5 seconds before sending the next message
-  delay(1000);
+  delay(5000);
 }
