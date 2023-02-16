@@ -10,25 +10,63 @@
 #include <string>
 #include <list>
 #include <wire.h>
+#include <cstdio>
+
+ int Pa, Pd, Pp, La, Lp, Ld;
 
 uint8_t broadcastAddress[] = {0x94, 0xB9, 0x7E, 0xAD, 0x45, 0xD4};
 
+Bala bala;
+
 using namespace std;
 TFT_eSprite display = TFT_eSprite(&M5.Lcd);
-std::stringstream data;
-// Callback when data is received
+// Funkce příchod dat
 void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len)
 {
-  data.str("");
-  data << (const char*)incomingData;
+  //větší převod = rychlejší auto (max 5 - min 1)
+  int prevod = 5;
+  std::stringstream data;
+  std::string prichozi = (const char*)incomingData;
+  Serial.println(prichozi.c_str());
+  data.str(prichozi);
   Serial.println(data.str().c_str());
+
+  data >> Pa >> Pd >> Pp >> La >> Lp >> Ld;
+
+  
+  if (Pa > 270 || Pa < 90) {
+    Pd *= -1;
+  } else {
+    Pd *= 1;
+  }
+
+  if (La > 270 || La < 90) {
+    Ld *= -1;
+  } else {
+    Ld *= 1;
+  }
+
+  int16_t prava = Pd*prevod;
+  int16_t leva = Ld*prevod;
+
+  bala.SetSpeed(leva,prava);
+
+  /* DEBUG
+  Serial.print("prichozi: ");
+  Serial.print("prava: ");
+  Serial.println(prava);
+  Serial.print("leva: ");
+  Serial.println(leva);
+  Serial.print("data: ");
+  Serial.println(data.str().c_str());
+  */
+
 }
 
 
 void vypis(const char *text,int posx,int posy){
-  display.fillSprite(TFT_BLACK);
   display.setCursor(posx, posy);
-  display.drawString(text, 0, 0);
+  display.drawString(text, posx, posy);
   display.pushSprite(0, 0);
 }
 
@@ -39,7 +77,7 @@ void setup()
   vypis("Start",10,10);
   M5.begin();
   Wire.begin();
-  display.createSprite(300,100);
+  display.createSprite(300,180);
   display.fillSprite(TFT_BLACK);
   display.setTextColor(TFT_WHITE);
   display.setTextSize(3);
@@ -67,7 +105,7 @@ void setup()
     Serial.println("Failed to add peer");
     return;
   }
-
+  display.fillSprite(TFT_BLACK);
   vypis("Hledam kamarada",10,10);
   esp_now_register_recv_cb(OnDataRecv);
 
@@ -75,14 +113,23 @@ void setup()
 
 void loop()
 {
+
   // Send a message
-  vypis("Povídáme si",10,10);
-  const char* outgoingData = "Hello from ESP32";
+
+  display.fillSprite(TFT_BLACK);
+  vypis("Povidame si",10,10);
+  float batteryLevel = M5.Power.getBatteryLevel();
+  Serial.print("Battery level: ");
+  char myText[16];
+  sprintf(myText, "%.2f", batteryLevel);
+  vypis(myText,10,40);
+  Serial.println(batteryLevel);
+  /*const char* outgoingData = "1";
   esp_err_t result = esp_now_send(broadcastAddress, (uint8_t*) outgoingData, strlen(outgoingData) + 1);
   if (result == ESP_OK) {
-    Serial.println("odesláno");
+    //Serial.println("odesláno");
   }
-  
+  */
   // Wait for 5 seconds before sending the next message
-  delay(5000);  
+  delay(1000);
 }
