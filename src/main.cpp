@@ -12,6 +12,7 @@
 #include <wire.h>
 #include <cstdio>
 
+int command = 0;
  int Pa, Pd, Pp, La, Lp, Ld;
 
 uint8_t broadcastAddress[] = {0x94, 0xB9, 0x7E, 0xAD, 0x45, 0xD4};
@@ -36,6 +37,13 @@ int8_t getBatteryLevel()
     }
   }
   return -1;
+}
+
+
+void vypis(const char *text,int posx,int posy){
+  display.setCursor(posx, posy);
+  display.drawString(text, posx, posy);
+  display.pushSprite(0, 0);
 }
 
 
@@ -65,10 +73,16 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len)
     Ld *= 1;
   }
 
-  int16_t prava = Pd*prevod;
-  int16_t leva = Ld*prevod;
+  if (Pp == 1 && Lp == 1){
+    
+  }else{
+    int16_t prava = Pd*prevod;
+    int16_t leva = Ld*prevod;
 
-  bala.SetSpeed(leva,prava);
+    bala.SetSpeed(leva,prava);
+  }
+
+
 
   /* DEBUG
   Serial.print("prichozi: ");
@@ -80,13 +94,23 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len)
   Serial.println(data.str().c_str());
   */
 
-}
-
-
-void vypis(const char *text,int posx,int posy){
-  display.setCursor(posx, posy);
-  display.drawString(text, posx, posy);
-  display.pushSprite(0, 0);
+  display.fillSprite(TFT_BLACK);
+  vypis("Povidame si",10,10);
+  int cyklus = 0;
+  cyklus++;
+  if (cyklus == 100){
+    cyklus = 0;
+    int bat = getBatteryLevel();
+    char baterka[10];
+    sprintf(baterka, "%d", bat);
+    vypis(baterka,10,40);
+    Serial.println(bat);
+    const char* outgoingData = baterka;
+    esp_err_t result = esp_now_send(broadcastAddress, (uint8_t*) outgoingData, strlen(outgoingData) + 1);
+    if (result == ESP_OK) {
+      //Serial.println("odesláno");
+    }
+  }
 }
 
 void setup()
@@ -137,22 +161,15 @@ void setup()
 void loop()
 {
 
-  // Send a message
-
-  display.fillSprite(TFT_BLACK);
-  vypis("Povidame si",10,10);
-  int bat = getBatteryLevel();
-  char baterka[10];
-  sprintf(baterka, "%d", bat);
-  vypis(baterka,10,40);
-
-  Serial.println(bat);
-  const char* outgoingData = baterka;
-  esp_err_t result = esp_now_send(broadcastAddress, (uint8_t*) outgoingData, strlen(outgoingData) + 1);
-  if (result == ESP_OK) {
-    //Serial.println("odesláno");
+  IrReceiver.printIRResultShort(&Serial);
+  IrReceiver.printIRSendUsage(&Serial);
+  if (IrReceiver.decodedIRData.protocol == UNKNOWN) {
+      Serial.println("Received noise or an unknown (or not yet enabled) protocol");
+      // We have an unknown protocol here, print more info
+      IrReceiver.printIRResultRawFormatted(&Serial, true);
   }
-  
+  command = IrReceiver.decodedIRData.command;
+  IrReceiver.resume(); // Enable receiving of the next value
   // Wait for 5 seconds before sending the next message
-  delay(5000);
+  //delay(5000);
 }
