@@ -12,8 +12,10 @@
 #include <wire.h>
 #include <cstdio>
 
- int Pa, Pd, Pp, La, Lp, Ld;
-
+int Pa, Pd, Pp, La, Lp, Ld;
+int hleda = 0;
+int command = 0;
+int i = 0;
 uint8_t broadcastAddress[] = {0x94, 0xB9, 0x7E, 0xAD, 0x45, 0xD4};
 
 Bala bala;
@@ -37,8 +39,8 @@ int8_t getBatteryLevel()
   }
   return -1;
 }
-
-
+int16_t prava;
+int16_t leva;
 // Funkce příchod dat
 void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len)
 {
@@ -46,9 +48,9 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len)
   int prevod = 5;
   std::stringstream data;
   std::string prichozi = (const char*)incomingData;
-  Serial.println(prichozi.c_str());
+  //Serial.println(prichozi.c_str());
   data.str(prichozi);
-  Serial.println(data.str().c_str());
+  //Serial.println(data.str().c_str());
 
   data >> Pa >> Pd >> Pp >> La >> Lp >> Ld;
 
@@ -65,10 +67,8 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len)
     Ld *= 1;
   }
 
-  int16_t prava = Pd*prevod;
-  int16_t leva = Ld*prevod;
-
-  bala.SetSpeed(leva,prava);
+  prava= Pd*prevod;
+  leva= Ld*prevod;
 
   /* DEBUG
   Serial.print("prichozi: ");
@@ -89,8 +89,15 @@ void vypis(const char *text,int posx,int posy){
   display.pushSprite(0, 0);
 }
 
+void hledani(int prikaz){
+
+}
+
 void setup()
 {
+  M5.begin();
+  Wire.begin();
+  delay(500);
   Serial.println("START " __FILE__ " from " __DATE__ "\r\nUsing library version " VERSION_IRREMOTE);
   // Init Serial Monitor
   IrReceiver.begin(IR_RECEIVE_PIN, ENABLE_LED_FEEDBACK);
@@ -98,8 +105,6 @@ void setup()
   Serial.print("Ready to receive IR signals of protocols: ");
   printActiveIRProtocols(&Serial);
   vypis("Start",10,10);
-  M5.begin();
-  Wire.begin();
   display.createSprite(300,180);
   display.fillSprite(TFT_BLACK);
   display.setTextColor(TFT_WHITE);
@@ -143,16 +148,45 @@ void loop()
   vypis("Povidame si",10,10);
   int bat = getBatteryLevel();
   char baterka[10];
-  sprintf(baterka, "%d", bat);
+  //sprintf(baterka, "%d", bat);
   vypis(baterka,10,40);
 
-  Serial.println(bat);
-  const char* outgoingData = baterka;
-  esp_err_t result = esp_now_send(broadcastAddress, (uint8_t*) outgoingData, strlen(outgoingData) + 1);
-  if (result == ESP_OK) {
-    //Serial.println("odesláno");
+
+
+  //Serial.println(bat);
+  if (i = 1000){
+    const char* outgoingData = baterka;
+    esp_err_t result = esp_now_send(broadcastAddress, (uint8_t*) outgoingData, strlen(outgoingData) + 1);
+    i = 0;
   }
-  
-  // Wait for 5 seconds before sending the next message
-  delay(5000);
+  i++;
+  if (IrReceiver.decode()) {
+    IrReceiver.printIRResultShort(&Serial);
+    IrReceiver.printIRSendUsage(&Serial);
+    if (IrReceiver.decodedIRData.protocol == UNKNOWN) {
+        Serial.println("Received noise or an unknown (or not yet enabled) protocol");
+        // We have an unknown protocol here, print more info
+        IrReceiver.printIRResultRawFormatted(&Serial, true);
+    }
+    IrReceiver.resume(); // Enable receiving of the next value
+    command = IrReceiver.decodedIRData.command;
+  }
+  if (Pp == 1 && Lp == 1 && hleda == 0){
+
+    hleda = 1;
+  }
+  if (Pp == 1 && Lp == 1 && hleda == 1){
+
+    hleda = 0;
+  }
+  if (hleda == 1){
+    hledani(command);
+  }
+  if (command != 0){
+    Serial.print(command);
+    command = 0;
+  }
+  bala.SetSpeed(leva,prava);
+  // Wait for 10 seconds before sending the next message
+  delay(1000);
 }

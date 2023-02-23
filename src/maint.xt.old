@@ -113,7 +113,8 @@ void loop() {
             }
             command = 0;
         }
-        delay(200);
+    }
+    delay(200);
     vratka = IrReceiver.decodedIRData.command;
     text(jede,mode,getBatteryLevel(),hleda,vratka,speed1,speed2);
 }

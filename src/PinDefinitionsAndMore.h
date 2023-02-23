@@ -44,25 +44,14 @@
 //#define IRMP_MEASURE_TIMING // For debugging purposes.
 //
 
-#if defined(ESP32)
-#define IR_RECEIVE_PIN          15  // D15
-#define IR_SEND_PIN              4  // D4
+
+#define IR_RECEIVE_PIN          16  // D15
+#define IR_SEND_PIN              17  // D4
 #define tone(a,b,c) void()      // no tone() available on ESP32
 #define noTone(a) void()
 #define TONE_PIN                42 // Dummy for examples using it
 #define APPLICATION_PIN         16 // RX2 pin
 
-
-#else
-#warning Board / CPU is not detected using pre-processor symbols -> using default values, which may not fit. Please extend PinDefinitionsAndMore.h.
-// Default valued for unidentified boards
-#define IR_RECEIVE_PIN      2
-#define IR_SEND_PIN         3
-#define TONE_PIN            4
-#define APPLICATION_PIN     5
-#define ALTERNATIVE_IR_FEEDBACK_LED_PIN 6 // E.g. used for examples which use LED_BUILDIN for example output.
-#define IR_TIMING_TEST_PIN  7
-#endif // defined(ESP8266)
 
 #define STR_HELPER(x) #x
 #define STR(x) STR_HELPER(x)
