@@ -13,15 +13,19 @@
 #include <cstdio>
 
 int Pa, Pd, Pp, La, Lp, Ld;
-int hleda = 0;
+int hleda;
 int command = 0;
 int i = 0;
+bool nasel = false;
 uint8_t broadcastAddress[] = {0x94, 0xB9, 0x7E, 0xAD, 0x45, 0xD4};
 
 Bala bala;
 
 using namespace std;
 TFT_eSprite display = TFT_eSprite(&M5.Lcd);
+
+unsigned long lastChangeTime = 0;
+const unsigned long debounceDelay = 2000;
 
 int8_t getBatteryLevel()
 {
@@ -42,6 +46,12 @@ int8_t getBatteryLevel()
 int16_t prava;
 int16_t leva;
 // Funkce příchod dat
+
+void BalaStop(){
+  prava = 0;
+  leva = 0;
+}
+
 void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len)
 {
   //větší převod = rychlejší auto (max 5 - min 1)
@@ -54,22 +64,23 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len)
 
   data >> Pa >> Pd >> Pp >> La >> Lp >> Ld;
 
-  
-  if (Pa > 270 || Pa < 90) {
-    Pd *= -1;
-  } else {
-    Pd *= 1;
+  if(hleda == 0){
+    if (Pa > 270 || Pa < 90) {
+      Pd *= -1;
+    } else {
+      Pd *= 1;
+    }
+
+    if (La > 270 || La < 90) {
+      Ld *= -1;
+    } else {
+      Ld *= 1;
+    }
+
+    prava= Pd*prevod;
+    leva= Ld*prevod;
   }
-
-  if (La > 270 || La < 90) {
-    Ld *= -1;
-  } else {
-    Ld *= 1;
-  }
-
-  prava= Pd*prevod;
-  leva= Ld*prevod;
-
+  i++;
   /* DEBUG
   Serial.print("prichozi: ");
   Serial.print("prava: ");
@@ -79,8 +90,8 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len)
   Serial.print("data: ");
   Serial.println(data.str().c_str());
   */
-
 }
+
 
 
 void vypis(const char *text,int posx,int posy){
@@ -90,6 +101,20 @@ void vypis(const char *text,int posx,int posy){
 }
 
 void hledani(int prikaz){
+  if(nasel == false){
+    display.fillSprite(TFT_BLACK);
+    vypis("hledam",10,10);
+    bala.SetSpeed(300,-300);
+    delay(100);
+  }
+  if(prikaz == 0xA && nasel == false){
+    BalaStop();
+    nasel = true;
+    Serial.print("cs");
+  }
+  if(prikaz == 0x12 && nasel == true){
+    nasel = false;
+  }
 
 }
 
@@ -111,8 +136,8 @@ void setup()
   display.setTextSize(3);
   // Set device as a Wi-Fi Station
   WiFi.mode(WIFI_STA);
-
   // Init ESP-NOW
+
   if (esp_now_init() != ESP_OK) {
     Serial.println("Error initializing ESP-NOW");
     return;
@@ -136,30 +161,27 @@ void setup()
   display.fillSprite(TFT_BLACK);
   vypis("Hledam kamarada",10,10);
   esp_now_register_recv_cb(OnDataRecv);
-
 }
-
+int bat;
 void loop()
 {
 
   // Send a message
 
-  display.fillSprite(TFT_BLACK);
-  vypis("Povidame si",10,10);
-  int bat = getBatteryLevel();
-  char baterka[10];
-  //sprintf(baterka, "%d", bat);
-  vypis(baterka,10,40);
 
-
-
-  //Serial.println(bat);
-  if (i = 1000){
+  if (i >= 250){
+    bat = getBatteryLevel();
+    char baterka[10];
+    sprintf(baterka, "%d", bat);
     const char* outgoingData = baterka;
     esp_err_t result = esp_now_send(broadcastAddress, (uint8_t*) outgoingData, strlen(outgoingData) + 1);
     i = 0;
+    delay(100);
+    display.fillSprite(TFT_BLACK);
+    vypis(baterka,10,40);
+    vypis("Povidame si",10,10);
   }
-  i++;
+
   if (IrReceiver.decode()) {
     IrReceiver.printIRResultShort(&Serial);
     IrReceiver.printIRSendUsage(&Serial);
@@ -171,14 +193,22 @@ void loop()
     IrReceiver.resume(); // Enable receiving of the next value
     command = IrReceiver.decodedIRData.command;
   }
-  if (Pp == 1 && Lp == 1 && hleda == 0){
 
+  if (Pp == 1 && Lp == 1 && hleda == 0 && millis() - lastChangeTime > debounceDelay) {
+    BalaStop();
+    Serial.println("změna");
     hleda = 1;
+    lastChangeTime = millis();
   }
-  if (Pp == 1 && Lp == 1 && hleda == 1){
 
+  if (Pp == 1 && Lp == 1 && hleda == 1 && millis() - lastChangeTime > debounceDelay) {
     hleda = 0;
+    Serial.println("změna");
+    lastChangeTime = millis();
   }
+
+
+  Serial.print(hleda);
   if (hleda == 1){
     hledani(command);
   }
@@ -188,5 +218,5 @@ void loop()
   }
   bala.SetSpeed(leva,prava);
   // Wait for 10 seconds before sending the next message
-  delay(1000);
+  //delay(1000);
 }
