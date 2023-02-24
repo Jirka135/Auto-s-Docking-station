@@ -9,8 +9,9 @@
 #include <sstream>
 #include <string>
 #include <list>
-#include <wire.h>
+#include <Wire.h>
 #include <cstdio>
+#include <Unit_Sonic.h>
 
 int Pa, Pd, Pp, La, Lp, Ld;
 int hleda;
@@ -18,6 +19,10 @@ int command = 0;
 int i = 0;
 bool nasel = false;
 uint8_t broadcastAddress[] = {0x94, 0xB9, 0x7E, 0xAD, 0x45, 0xD4};
+
+SONIC_I2C sensor;
+
+Task task1(100, TASK_FOREVER, &myFunction);
 
 Bala bala;
 
@@ -55,7 +60,7 @@ void BalaStop(){
 void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len)
 {
   //větší převod = rychlejší auto (max 5 - min 1)
-  int prevod = 5;
+  int prevod = 6;
   std::stringstream data;
   std::string prichozi = (const char*)incomingData;
   //Serial.println(prichozi.c_str());
@@ -100,28 +105,32 @@ void vypis(const char *text,int posx,int posy){
   display.pushSprite(0, 0);
 }
 
-void hledani(int prikaz){
+void hledani(int prikaz,int dalka){
   if(nasel == false){
     display.fillSprite(TFT_BLACK);
     vypis("hledam",10,10);
-    bala.SetSpeed(300,-300);
+    bala.SetSpeed(800,-800);
     delay(100);
   }
   if(prikaz == 0xA && nasel == false){
     BalaStop();
     nasel = true;
-    Serial.print("cs");
+    display.fillSprite(TFT_BLACK);                      
+    vypis("neasel",10,10);
+  }
+  if (nasel == true && prikaz != 0x12 && dalka > 10){
+    bala.SetSpeed(500,500);
   }
   if(prikaz == 0x12 && nasel == true){
     nasel = false;
   }
-
 }
 
 void setup()
 {
   M5.begin();
   Wire.begin();
+  sensor.begin();
   delay(500);
   Serial.println("START " __FILE__ " from " __DATE__ "\r\nUsing library version " VERSION_IRREMOTE);
   // Init Serial Monitor
@@ -167,8 +176,11 @@ void loop()
 {
 
   // Send a message
+  float distance = sensor.getDistance();
+  int cm = distance / 10;
+  Serial.println(cm);
 
-
+  // konec
   if (i >= 250){
     bat = getBatteryLevel();
     char baterka[10];
@@ -210,7 +222,7 @@ void loop()
 
   Serial.print(hleda);
   if (hleda == 1){
-    hledani(command);
+    hledani(command,cm);
   }
   if (command != 0){
     Serial.print(command);
