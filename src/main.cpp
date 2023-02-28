@@ -12,7 +12,7 @@
 #include <Wire.h>
 #include <cstdio>
 #include <Unit_Sonic.h>
-#include <TaskScheduler.h>
+#include <AsyncTaskLib.h>
 
 int Pa, Pd, Pp, La, Lp, Ld;
 int hleda;
@@ -23,11 +23,11 @@ uint8_t broadcastAddress[] = {0x94, 0xB9, 0x7E, 0xAD, 0x45, 0xD4};
 
 SONIC_I2C sensor;
 
-Task motor(100, TASK_FOREVER, &Motor);
 
 Bala bala;
 
 using namespace std;
+
 TFT_eSprite display = TFT_eSprite(&M5.Lcd);
 
 unsigned long lastChangeTime = 0;
@@ -49,13 +49,22 @@ int8_t getBatteryLevel()
   }
   return -1;
 }
-int16_t prava;
-int16_t leva;
+
 // Funkce příchod dat
 
-void Motor(int leva,int prava){
-  bala.SetSpeed(leva,prava)
+int16_t leva;
+int16_t prava;
+
+void s_motor(int16_t lleva,int16_t pprava){
+  leva = lleva;
+  prava = pprava;
 }
+
+void Motor(int16_t l,int16_t p) {
+  bala.SetSpeed(l,p);
+}
+
+AsyncTask task(100, true, []() { Motor(leva, prava); });
 
 void BalaStop(){
   prava = 0;
@@ -114,7 +123,7 @@ void hledani(int prikaz,int dalka){
   if(nasel == false){
     display.fillSprite(TFT_BLACK);
     vypis("hledam",10,10);
-    bala.SetSpeed(800,-800);
+    s_motor(500,-500);
     delay(100);
   }
   if(prikaz == 0xA && nasel == false){
@@ -124,7 +133,7 @@ void hledani(int prikaz,int dalka){
     vypis("neasel",10,10);
   }
   if (nasel == true && prikaz != 0x12 && dalka > 10){
-    bala.SetSpeed(500,500);
+      s_motor(500,500);
   }
   if(prikaz == 0x12 && nasel == true){
     nasel = false;
@@ -137,7 +146,6 @@ void setup()
   Wire.begin();
   sensor.begin();
   delay(500);
-  motor.enable();
   Serial.println("START " __FILE__ " from " __DATE__ "\r\nUsing library version " VERSION_IRREMOTE);
   // Init Serial Monitor
   IrReceiver.begin(IR_RECEIVE_PIN, ENABLE_LED_FEEDBACK);
@@ -153,6 +161,8 @@ void setup()
   WiFi.mode(WIFI_STA);
   // Init ESP-NOW
 
+  // Start the task
+  task.Start();
   if (esp_now_init() != ESP_OK) {
     Serial.println("Error initializing ESP-NOW");
     return;
@@ -178,16 +188,17 @@ void setup()
   esp_now_register_recv_cb(OnDataRecv);
 }
 int bat;
+bool prvni = true;
 void loop()
 {
-
+  task.Update();
   // Send a message
   float distance = sensor.getDistance();
   int cm = distance / 10;
   Serial.println(cm);
 
   // konec
-  if (i >= 250){
+  if (i >= 500 || prvni == true){
     bat = getBatteryLevel();
     char baterka[10];
     sprintf(baterka, "%d", bat);
@@ -198,6 +209,7 @@ void loop()
     display.fillSprite(TFT_BLACK);
     vypis(baterka,10,40);
     vypis("Povidame si",10,10);
+    prvni = false;
   }
 
   if (IrReceiver.decode()) {
@@ -234,7 +246,7 @@ void loop()
     Serial.print(command);
     command = 0;
   }
-  bala.SetSpeed(leva,prava);
+  s_motor(leva,prava);
   // Wait for 10 seconds before sending the next message
   //delay(1000);
 }
