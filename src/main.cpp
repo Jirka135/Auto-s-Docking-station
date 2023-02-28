@@ -12,6 +12,7 @@
 #include <Wire.h>
 #include <cstdio>
 #include <Unit_Sonic.h>
+#include <TaskScheduler.h>
 
 int Pa, Pd, Pp, La, Lp, Ld;
 int hleda;
@@ -22,7 +23,7 @@ uint8_t broadcastAddress[] = {0x94, 0xB9, 0x7E, 0xAD, 0x45, 0xD4};
 
 SONIC_I2C sensor;
 
-Task task1(100, TASK_FOREVER, &myFunction);
+Task motor(100, TASK_FOREVER, &Motor);
 
 Bala bala;
 
@@ -51,6 +52,10 @@ int8_t getBatteryLevel()
 int16_t prava;
 int16_t leva;
 // Funkce příchod dat
+
+void Motor(int leva,int prava){
+  bala.SetSpeed(leva,prava)
+}
 
 void BalaStop(){
   prava = 0;
@@ -132,6 +137,7 @@ void setup()
   Wire.begin();
   sensor.begin();
   delay(500);
+  motor.enable();
   Serial.println("START " __FILE__ " from " __DATE__ "\r\nUsing library version " VERSION_IRREMOTE);
   // Init Serial Monitor
   IrReceiver.begin(IR_RECEIVE_PIN, ENABLE_LED_FEEDBACK);
