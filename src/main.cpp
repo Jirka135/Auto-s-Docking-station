@@ -14,24 +14,22 @@
 #include <Unit_Sonic.h>
 #include <AsyncTaskLib.h>
 
+//Proměnné
+
 int Pa, Pd, Pp, La, Lp, Ld;
-int hleda;
 int command = 0;
 int i = 0;
+bool hleda = false;
 bool nasel = false;
 uint8_t broadcastAddress[] = {0x94, 0xB9, 0x7E, 0xAD, 0x45, 0xD4};
 
 SONIC_I2C sensor;
-
-
 Bala bala;
-
-using namespace std;
-
-TFT_eSprite display = TFT_eSprite(&M5.Lcd);
 
 unsigned long lastChangeTime = 0;
 const unsigned long debounceDelay = 2000;
+
+TFT_eSprite display = TFT_eSprite(&M5.Lcd);
 
 int8_t getBatteryLevel()
 {
@@ -55,64 +53,47 @@ int8_t getBatteryLevel()
 int16_t leva;
 int16_t prava;
 
+//přepsání dat pro použítí funkcí
 void s_motor(int16_t lleva,int16_t pprava){
   leva = lleva;
   prava = pprava;
 }
 
-void Motor(int16_t l,int16_t p) {
-  bala.SetSpeed(l,p);
-}
+//příjmání dat
+void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
+  if (!hleda) {
+    int prevod = 5;
+    std::stringstream data((const char*)incomingData);
+    data >> Pa >> Pd >> Pp >> La >> Lp >> Ld;
 
-AsyncTask task(100, true, []() { Motor(leva, prava); });
-
-void BalaStop(){
-  prava = 0;
-  leva = 0;
-}
-
-void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len)
-{
-  //větší převod = rychlejší auto (max 5 - min 1)
-  int prevod = 6;
-  std::stringstream data;
-  std::string prichozi = (const char*)incomingData;
-  //Serial.println(prichozi.c_str());
-  data.str(prichozi);
-  //Serial.println(data.str().c_str());
-
-  data >> Pa >> Pd >> Pp >> La >> Lp >> Ld;
-
-  if(hleda == 0){
     if (Pa > 270 || Pa < 90) {
       Pd *= -1;
-    } else {
-      Pd *= 1;
     }
 
     if (La > 270 || La < 90) {
       Ld *= -1;
-    } else {
-      Ld *= 1;
     }
 
-    prava= Pd*prevod;
-    leva= Ld*prevod;
+    prava = Pd * prevod;
+    leva = Ld * prevod;
   }
+  
   i++;
-  /* DEBUG
-  Serial.print("prichozi: ");
-  Serial.print("prava: ");
-  Serial.println(prava);
-  Serial.print("leva: ");
-  Serial.println(leva);
-  Serial.print("data: ");
-  Serial.println(data.str().c_str());
-  */
+  s_motor(leva, prava);
 }
 
-
-
+//funkce k ovládání rychlosti
+void Motor(int16_t l,int16_t p) {
+  bala.SetSpeed(l,p);
+}
+//asynchroní funkce
+AsyncTask task(10, true, []() { Motor(leva, prava); });
+//zastavení auta
+void BalaStop(){
+  prava = 0;
+  leva = 0;
+}
+//výpis na display
 void vypis(const char *text,int posx,int posy){
   display.setCursor(posx, posy);
   display.drawString(text, posx, posy);
@@ -120,92 +101,97 @@ void vypis(const char *text,int posx,int posy){
 }
 
 void hledani(int prikaz,int dalka){
-  if(nasel == false){
-    display.fillSprite(TFT_BLACK);
-    vypis("hledam",10,10);
-    s_motor(500,-500);
-    delay(100);
+  static bool prev_nasel = false;
+  if (!nasel) {
+    if (!prev_nasel) {
+      vypis("hledam", 10, 10);
+      prev_nasel = true;
+    }
+    s_motor(500, -500);
+    unsigned long currentMillis = millis();
+    while (millis() - currentMillis < 100) {}
   }
-  if(prikaz == 0xA && nasel == false){
-    BalaStop();
-    nasel = true;
-    display.fillSprite(TFT_BLACK);                      
-    vypis("neasel",10,10);
-  }
-  if (nasel == true && prikaz != 0x12 && dalka > 10){
-      s_motor(500,500);
-  }
-  if(prikaz == 0x12 && nasel == true){
-    nasel = false;
+
+  switch (prikaz) {
+    case 0xA:
+      BalaStop();
+      nasel = true;
+      prev_nasel = false;
+      vypis("neasel", 10, 10);
+      break;
+
+    case 0x12:
+      if (nasel) {
+        nasel = false;
+      }
+      break;
+
+    default:
+      if (nasel && dalka > 10) {
+        s_motor(500, 500);
+      }
+      break;
   }
 }
 
 void setup()
 {
-  M5.begin();
-  Wire.begin();
-  sensor.begin();
-  delay(500);
-  Serial.println("START " __FILE__ " from " __DATE__ "\r\nUsing library version " VERSION_IRREMOTE);
-  // Init Serial Monitor
-  IrReceiver.begin(IR_RECEIVE_PIN, ENABLE_LED_FEEDBACK);
-  Serial.begin(115200);
-  Serial.print("Ready to receive IR signals of protocols: ");
-  printActiveIRProtocols(&Serial);
-  vypis("Start",10,10);
-  display.createSprite(300,180);
-  display.fillSprite(TFT_BLACK);
-  display.setTextColor(TFT_WHITE);
-  display.setTextSize(3);
-  // Set device as a Wi-Fi Station
-  WiFi.mode(WIFI_STA);
-  // Init ESP-NOW
+ // IR receiver
+IrReceiver.begin(IR_RECEIVE_PIN, ENABLE_LED_FEEDBACK);
+Serial.begin(115200);
 
-  // Start the task
-  task.Start();
-  if (esp_now_init() != ESP_OK) {
-    Serial.println("Error initializing ESP-NOW");
-    return;
-  }
+Serial.print("Ready to receive IR signals of protocols: ");
+printActiveIRProtocols(&Serial);
 
-  // Register peer
-  esp_now_peer_info_t peerInfo;
-  memset(&peerInfo, 0, sizeof(peerInfo));
-  for (int ii = 0; ii < 6; ++ii )
-  {
-    peerInfo.peer_addr[ii] = (uint8_t) broadcastAddress[ii];
-  }
-  peerInfo.channel = 0;
-  peerInfo.encrypt = false;
+// display
+display.createSprite(300, 180);
+display.fillSprite(TFT_BLACK);
+display.setTextColor(TFT_WHITE);
+display.setTextSize(3);
 
-  // Add peer
-  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
-    Serial.println("Failed to add peer");
-    return;
-  }
-  display.fillSprite(TFT_BLACK);
-  vypis("Hledam kamarada",10,10);
-  esp_now_register_recv_cb(OnDataRecv);
+// ESP-NOW
+if (esp_now_init() != ESP_OK) {
+  Serial.println("Error initializing ESP-NOW");
+  return;
+}
+
+// Register peer
+esp_now_peer_info_t peer_info;
+memset(&peer_info, 0, sizeof(peer_info));
+for (int i = 0; i < 6; ++i) {
+  peer_info.peer_addr[i] = (uint8_t) broadcastAddress[i];
+}
+peer_info.channel = 0;
+peer_info.encrypt = false;
+
+// Add peer
+if (esp_now_add_peer(&peer_info) != ESP_OK) {
+  Serial.println("Failed to add peer");
+  return;
+}
+
+esp_now_register_recv_cb(OnDataRecv);
+
+task.Start();
+
+WiFi.mode(WIFI_STA);
+
+display.fillSprite(TFT_BLACK);
+vypis("Hledam kamarada", 10, 10);
 }
 int bat;
 bool prvni = true;
 void loop()
 {
-  task.Update();
-  // Send a message
-  float distance = sensor.getDistance();
-  int cm = distance / 10;
-  Serial.println(cm);
 
-  // konec
-  if (i >= 500 || prvni == true){
+  task.Update();
+  if (i >= 500 || prvni){
     bat = getBatteryLevel();
     char baterka[10];
     sprintf(baterka, "%d", bat);
     const char* outgoingData = baterka;
     esp_err_t result = esp_now_send(broadcastAddress, (uint8_t*) outgoingData, strlen(outgoingData) + 1);
     i = 0;
-    delay(100);
     display.fillSprite(TFT_BLACK);
     vypis(baterka,10,40);
     vypis("Povidame si",10,10);
@@ -216,37 +202,36 @@ void loop()
     IrReceiver.printIRResultShort(&Serial);
     IrReceiver.printIRSendUsage(&Serial);
     if (IrReceiver.decodedIRData.protocol == UNKNOWN) {
-        Serial.println("Received noise or an unknown (or not yet enabled) protocol");
-        // We have an unknown protocol here, print more info
-        IrReceiver.printIRResultRawFormatted(&Serial, true);
+      Serial.println("Received noise or an unknown (or not yet enabled) protocol");
+      IrReceiver.printIRResultRawFormatted(&Serial, true);
     }
-    IrReceiver.resume(); // Enable receiving of the next value
+    IrReceiver.resume();
     command = IrReceiver.decodedIRData.command;
   }
 
-  if (Pp == 1 && Lp == 1 && hleda == 0 && millis() - lastChangeTime > debounceDelay) {
-    BalaStop();
-    Serial.println("změna");
-    hleda = 1;
-    lastChangeTime = millis();
+  if (millis() - lastChangeTime > debounceDelay) {
+    if (Pp == 1 && Lp == 1 && !hleda) {
+      BalaStop();
+      Serial.println("změna");
+      hleda = true;
+      lastChangeTime = millis();
+    }
+
+    if (Pp == 1 && Lp == 1 && hleda) {
+      hleda = false;
+      Serial.println("změna");
+      lastChangeTime = millis();
+    }
   }
 
-  if (Pp == 1 && Lp == 1 && hleda == 1 && millis() - lastChangeTime > debounceDelay) {
-    hleda = 0;
-    Serial.println("změna");
-    lastChangeTime = millis();
+  if (hleda) {
+    float distance = sensor.getDistance();
+    int cm = distance / 10;
+    hledani(command, cm);
   }
 
-
-  Serial.print(hleda);
-  if (hleda == 1){
-    hledani(command,cm);
-  }
-  if (command != 0){
+  if (command != 0) {
     Serial.print(command);
     command = 0;
   }
-  s_motor(leva,prava);
-  // Wait for 10 seconds before sending the next message
-  //delay(1000);
 }
