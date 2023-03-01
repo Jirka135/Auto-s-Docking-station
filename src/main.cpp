@@ -26,8 +26,9 @@ uint8_t broadcastAddress[] = {0x94, 0xB9, 0x7E, 0xAD, 0x45, 0xD4};
 SONIC_I2C sensor;
 Bala bala;
 
-unsigned long lastChangeTime = 0;
-const unsigned long debounceDelay = 2000;
+const unsigned long debounceDelay = 500;
+unsigned long lastActivationTime = 0;
+bool previousHleda = false;
 
 TFT_eSprite display = TFT_eSprite(&M5.Lcd);
 
@@ -61,10 +62,10 @@ void s_motor(int16_t lleva,int16_t pprava){
 
 //příjmání dat
 void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
+  std::stringstream data((const char*)incomingData);
+  data >> Pa >> Pd >> Pp >> La >> Lp >> Ld;
   if (!hleda) {
     int prevod = 5;
-    std::stringstream data((const char*)incomingData);
-    data >> Pa >> Pd >> Pp >> La >> Lp >> Ld;
 
     if (Pa > 270 || Pa < 90) {
       Pd *= -1;
@@ -76,10 +77,11 @@ void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
 
     prava = Pd * prevod;
     leva = Ld * prevod;
+
+    s_motor(leva, prava);
   }
   
   i++;
-  s_motor(leva, prava);
 }
 
 //funkce k ovládání rychlosti
@@ -101,89 +103,80 @@ void vypis(const char *text,int posx,int posy){
 }
 
 void hledani(int prikaz,int dalka){
-  static bool prev_nasel = false;
-  if (!nasel) {
-    if (!prev_nasel) {
-      vypis("hledam", 10, 10);
-      prev_nasel = true;
-    }
-    s_motor(500, -500);
-    unsigned long currentMillis = millis();
-    while (millis() - currentMillis < 100) {}
+  if(!nasel){
+    display.fillSprite(TFT_BLACK);
+    vypis("hledam",10,10);
+    s_motor(300,-300);
   }
-
-  switch (prikaz) {
-    case 0xA:
-      BalaStop();
-      nasel = true;
-      prev_nasel = false;
-      vypis("neasel", 10, 10);
-      break;
-
-    case 0x12:
-      if (nasel) {
-        nasel = false;
-      }
-      break;
-
-    default:
-      if (nasel && dalka > 10) {
-        s_motor(500, 500);
-      }
-      break;
+  if(prikaz == 0xA && !nasel){
+    BalaStop();
+    nasel = true;
+    display.fillSprite(TFT_BLACK);                      
+    vypis("neasel",10,10);
+  }
+  if (nasel && prikaz != 0x12 && dalka > 10){
+      s_motor(250,250);
+  }
+  if(prikaz == 0x12 && nasel){
+    nasel = false;
+    ESP.restart();
   }
 }
 
 void setup()
 {
- // IR receiver
-IrReceiver.begin(IR_RECEIVE_PIN, ENABLE_LED_FEEDBACK);
-Serial.begin(115200);
 
-Serial.print("Ready to receive IR signals of protocols: ");
-printActiveIRProtocols(&Serial);
+  M5.begin();
+  Wire.begin();
+  sensor.begin();
+  WiFi.mode(WIFI_STA);
 
-// display
-display.createSprite(300, 180);
-display.fillSprite(TFT_BLACK);
-display.setTextColor(TFT_WHITE);
-display.setTextSize(3);
+  // IR receiver
+  IrReceiver.begin(IR_RECEIVE_PIN, ENABLE_LED_FEEDBACK);
+  Serial.begin(115200);
 
-// ESP-NOW
-if (esp_now_init() != ESP_OK) {
-  Serial.println("Error initializing ESP-NOW");
-  return;
-}
+  Serial.print("Ready to receive IR signals of protocols: ");
+  printActiveIRProtocols(&Serial);
 
-// Register peer
-esp_now_peer_info_t peer_info;
-memset(&peer_info, 0, sizeof(peer_info));
-for (int i = 0; i < 6; ++i) {
-  peer_info.peer_addr[i] = (uint8_t) broadcastAddress[i];
-}
-peer_info.channel = 0;
-peer_info.encrypt = false;
+  // display
+  display.createSprite(300, 180);
+  display.fillSprite(TFT_BLACK);
+  display.setTextColor(TFT_WHITE);
+  display.setTextSize(3);
 
-// Add peer
-if (esp_now_add_peer(&peer_info) != ESP_OK) {
-  Serial.println("Failed to add peer");
-  return;
-}
+  // ESP-NOW
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("Error initializing ESP-NOW");
+    return;
+  }
 
-esp_now_register_recv_cb(OnDataRecv);
+  // Register peer
+  esp_now_peer_info_t peer_info;
+  memset(&peer_info, 0, sizeof(peer_info));
+  for (int i = 0; i < 6; ++i) {
+    peer_info.peer_addr[i] = (uint8_t) broadcastAddress[i];
+  }
+  peer_info.channel = 0;
+  peer_info.encrypt = false;
 
-task.Start();
+  // Add peer
+  if (esp_now_add_peer(&peer_info) != ESP_OK) {
+    Serial.println("Failed to add peer");
+    return;
+  }
 
-WiFi.mode(WIFI_STA);
+  esp_now_register_recv_cb(OnDataRecv);
 
-display.fillSprite(TFT_BLACK);
-vypis("Hledam kamarada", 10, 10);
+  task.Start();
+
+  display.fillSprite(TFT_BLACK);
+  vypis("Hledam kamarada", 10, 10);
+  delay(1000);
 }
 int bat;
 bool prvni = true;
 void loop()
 {
-
   task.Update();
   if (i >= 500 || prvni){
     bat = getBatteryLevel();
@@ -209,24 +202,30 @@ void loop()
     command = IrReceiver.decodedIRData.command;
   }
 
-  if (millis() - lastChangeTime > debounceDelay) {
-    if (Pp == 1 && Lp == 1 && !hleda) {
-      BalaStop();
-      Serial.println("změna");
-      hleda = true;
-      lastChangeTime = millis();
-    }
-
-    if (Pp == 1 && Lp == 1 && hleda) {
-      hleda = false;
-      Serial.println("změna");
-      lastChangeTime = millis();
-    }
+  if (millis() - lastActivationTime > debounceDelay && Pp == 1 && Lp == 1 && !hleda) {
+    BalaStop();
+    Pp = 0;
+    Lp = 0;
+    Serial.println("hleda");
+    hleda = true;
+    previousHleda = true;
+    lastActivationTime = millis();
   }
+  if (millis() - lastActivationTime > debounceDelay && Pp == 1 && Lp == 1 && hleda && previousHleda) {
+    hleda = false;
+    Serial.println("nehleda");
+    Pp = 0;
+    Lp = 0;
+    previousHleda = false;
+    lastActivationTime = millis();
+  }
+
+  
 
   if (hleda) {
     float distance = sensor.getDistance();
     int cm = distance / 10;
+    BalaStop();
     hledani(command, cm);
   }
 
