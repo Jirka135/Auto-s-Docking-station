@@ -21,12 +21,13 @@ int command = 0;
 int i = 0;
 bool hleda = false;
 bool nasel = false;
+bool nabijim = false;
 uint8_t broadcastAddress[] = {0x94, 0xB9, 0x7E, 0xAD, 0x45, 0xD4};
 
 SONIC_I2C sensor;
 Bala bala;
 
-const unsigned long debounceDelay = 500;
+const unsigned long debounceDelay = 1000;
 unsigned long lastActivationTime = 0;
 bool previousHleda = false;
 
@@ -101,23 +102,34 @@ void vypis(const char *text,int posx,int posy){
   display.drawString(text, posx, posy);
   display.pushSprite(0, 0);
 }
+unsigned long lastExecutionTime = 0;
+unsigned long executionInterval = 100;
+int smer = 0; //0 = prava 1 =
+void hledani(int prikaz,int dalka,int batery){
 
-void hledani(int prikaz,int dalka){
-  if(!nasel){
-    display.fillSprite(TFT_BLACK);
-    vypis("hledam",10,10);
-    s_motor(300,-300);
-  }
   if(prikaz == 0xA && !nasel){
     BalaStop();
     nasel = true;
     display.fillSprite(TFT_BLACK);                      
-    vypis("neasel",10,10);
+    vypis("nasel",10,10);
   }
-  if (nasel && prikaz != 0x12 && dalka > 10){
-      s_motor(250,250);
+  if (nasel && dalka > 10 && prikaz == 0xA && !nabijim){
+    s_motor(-250,-250);
+
   }
-  if(prikaz == 0x12 && nasel){
+  if(!nabijim && dalka <= 10){
+    nabijim = true;
+  }
+  else{    
+    unsigned long currentMillis = millis();
+    if (currentMillis - lastExecutionTime > executionInterval) {
+      display.fillSprite(TFT_BLACK);
+      vypis("hledam",10,10);
+      s_motor(-500,-500);
+      lastExecutionTime = currentMillis;
+    }
+  }
+  if(prikaz == 0x12){
     nasel = false;
     ESP.restart();
   }
@@ -178,8 +190,8 @@ bool prvni = true;
 void loop()
 {
   task.Update();
+  bat = getBatteryLevel();
   if (i >= 500 || prvni){
-    bat = getBatteryLevel();
     char baterka[10];
     sprintf(baterka, "%d", bat);
     const char* outgoingData = baterka;
@@ -214,8 +226,10 @@ void loop()
   if (millis() - lastActivationTime > debounceDelay && Pp == 1 && Lp == 1 && hleda && previousHleda) {
     hleda = false;
     Serial.println("nehleda");
+    nasel = false;
     Pp = 0;
     Lp = 0;
+    prvni = true;
     previousHleda = false;
     lastActivationTime = millis();
   }
@@ -226,7 +240,7 @@ void loop()
     float distance = sensor.getDistance();
     int cm = distance / 10;
     BalaStop();
-    hledani(command, cm);
+    hledani(command, cm,bat);
   }
 
   if (command != 0) {
