@@ -120,18 +120,23 @@ void hledani(int prikaz,int dalka,int batery){
   if(!nabijim && dalka <= 10){
     nabijim = true;
   }
+  if(nabijim){
+    BalaStop();
+    display.fillSprite(TFT_BLACK);
+    vypis("nabijim",10,10);
+    if(prikaz == 0x12){
+      nabijim = false;
+      hleda = false;
+    }
+  }
   else{    
     unsigned long currentMillis = millis();
     if (currentMillis - lastExecutionTime > executionInterval) {
       display.fillSprite(TFT_BLACK);
       vypis("hledam",10,10);
-      s_motor(-500,-500);
+      s_motor(500,-500);
       lastExecutionTime = currentMillis;
     }
-  }
-  if(prikaz == 0x12){
-    nasel = false;
-    ESP.restart();
   }
 }
 
@@ -194,13 +199,15 @@ void loop()
   if (i >= 500 || prvni){
     char baterka[10];
     sprintf(baterka, "%d", bat);
+    vypis(baterka,10,40);
     const char* outgoingData = baterka;
     esp_err_t result = esp_now_send(broadcastAddress, (uint8_t*) outgoingData, strlen(outgoingData) + 1);
     i = 0;
-    display.fillSprite(TFT_BLACK);
-    vypis(baterka,10,40);
-    vypis("Povidame si",10,10);
     prvni = false;
+  }
+  if(!hleda){
+    display.fillSprite(TFT_BLACK);
+    vypis("Povidame si",10,10);
   }
 
   if (IrReceiver.decode()) {
@@ -233,8 +240,6 @@ void loop()
     previousHleda = false;
     lastActivationTime = millis();
   }
-
-  
 
   if (hleda) {
     float distance = sensor.getDistance();
